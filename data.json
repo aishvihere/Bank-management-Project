@@ -1,0 +1,34 @@
+[
+    {
+        "name": "suzy",
+        "age": 24,
+        "email": "suzy@gmail.com",
+        "pin": 4509,
+        "account_no": "k1#gx6o",
+        "balance": 6000
+    },
+    {
+        "name": "aishvi",
+        "age": 22,
+        "email": "ash@gmail.com",
+        "pin": 4567,
+        "account_no": "4!3HFXC",
+        "balance": 17000
+    },
+    {
+        "name": "Aditya",
+        "age": 20,
+        "email": "",
+        "pin": 1234,
+        "account_no": "SAWZK5L6",
+        "balance": 0
+    },
+    {
+        "name": "Maxy",
+        "age": 60,
+        "email": "max@gmail.com",
+        "pin": 1234,
+        "account_no": "7TRVV25E",
+        "balance": 900
+    }
+]
