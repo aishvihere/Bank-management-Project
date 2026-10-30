@@ -1,152 +1,147 @@
-import streamlit as st
+from fastapi import FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from typing import Optional
+
 from improved import Bank
 
 # ---------- INITIAL SETUP ----------
 bank = Bank()
 
-st.set_page_config(page_title="Bank Management System", layout="centered")
-st.title("🏦 Bank Management System")
-
-# ---------- HELPER FUNCTION ----------
-def authenticate_user():
-    acc_no = st.text_input("Account Number")
-    pin = st.text_input("PIN", type="password")
-    return acc_no, pin
-
-
-# ---------- SIDEBAR ----------
-st.sidebar.title("📌 Menu")
-menu = st.sidebar.radio(
-    "Select an option",
-    (
-        "Create Account",
-        "View Account Details",
-        "Deposit Money",
-        "Withdraw Money",
-        "Update Account",
-        "Delete Account"
-    )
+app = FastAPI(
+    title="Bank Management System API",
+    description="REST API for basic banking operations: create, view, deposit, withdraw, update and delete accounts.",
+    version="1.0.0",
 )
 
-# ---------- CREATE ACCOUNT ----------
-if menu == "Create Account":
-    st.subheader("Create New Account")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    name = st.text_input("Name")
-    age = st.number_input("Age", min_value=0)
-    email = st.text_input("Email")
-    pin = st.text_input("4 Digit PIN", type="password")
 
-    if st.button("Create Account"):
-        if not pin.isdigit():
-            st.error("PIN must be numeric")
-        else:
-            success, result = bank.create_account(
-                name, age, email, int(pin)
-            )
-            if success:
-                st.success("Account created successfully 🎉")
-                st.info(f"Your Account Number: {result['account_no']}")
-            else:
-                st.error(result)
+# ---------- SCHEMAS ----------
+class AccountCreate(BaseModel):
+    name: str
+    age: int = Field(ge=0)
+    email: str
+    pin: int = Field(ge=1000, le=9999)
 
-# ---------- VIEW DETAILS ----------
-elif menu == "View Account Details":
-    st.subheader("Account Details")
 
-    acc_no, pin = authenticate_user()
+class AccountDetails(BaseModel):
+    name: str
+    age: int
+    email: str
+    account_no: str
+    balance: int
 
-    if st.button("View Details"):
-        if not pin.isdigit():
-            st.error("Invalid PIN")
-        else:
-            user = bank.authenticate(acc_no, int(pin))
-            if not user:
-                st.error("Invalid credentials")
-            else:
-                st.json({
-                    "Name": user["name"],
-                    "Age": user["age"],
-                    "Email": user["email"],
-                    "Account Number": user["account_no"],
-                    "Balance": user["balance"]
-                })
 
-# ---------- DEPOSIT ----------
-elif menu == "Deposit Money":
-    st.subheader("Deposit Money")
+class AuthRequest(BaseModel):
+    account_no: str
+    pin: int
 
-    acc_no, pin = authenticate_user()
-    amount = st.number_input("Amount", min_value=1)
 
-    if st.button("Deposit"):
-        if not pin.isdigit():
-            st.error("Invalid PIN")
-        else:
-            user = bank.authenticate(acc_no, int(pin))
-            if not user:
-                st.error("Account not found")
-            else:
-                success, msg = bank.deposit(user, amount)
-                st.success(msg) if success else st.error(msg)
+class PinRequest(BaseModel):
+    pin: int
 
-# ---------- WITHDRAW ----------
-elif menu == "Withdraw Money":
-    st.subheader("Withdraw Money")
 
-    acc_no, pin = authenticate_user()
-    amount = st.number_input("Amount", min_value=1)
+class AmountRequest(BaseModel):
+    pin: int
+    amount: int = Field(gt=0)
 
-    if st.button("Withdraw"):
-        if not pin.isdigit():
-            st.error("Invalid PIN")
-        else:
-            user = bank.authenticate(acc_no, int(pin))
-            if not user:
-                st.error("Account not found")
-            else:
-                success, msg = bank.withdraw(user, amount)
-                st.success(msg) if success else st.error(msg)
 
-# ---------- UPDATE ACCOUNT ----------
-elif menu == "Update Account":
-    st.subheader("Update Account Details")
+class UpdateRequest(BaseModel):
+    pin: int
+    name: Optional[str] = None
+    email: Optional[str] = None
+    new_pin: Optional[int] = Field(default=None, ge=1000, le=9999)
 
-    acc_no, pin = authenticate_user()
-    new_name = st.text_input("New Name (optional)")
-    new_email = st.text_input("New Email (optional)")
-    new_pin = st.text_input("New PIN (optional)", type="password")
 
-    if st.button("Update Details"):
-        if not pin.isdigit():
-            st.error("Invalid PIN")
-        else:
-            user = bank.authenticate(acc_no, int(pin))
-            if not user:
-                st.error("Invalid credentials")
-            else:
-                success, msg = bank.update_details(
-                    user,
-                    name=new_name or None,
-                    email=new_email or None,
-                    pin=int(new_pin) if new_pin.isdigit() else None
-                )
-                st.success("Account updated successfully ✏️") if success else st.error(msg)
+class MessageResponse(BaseModel):
+    message: str
 
-# ---------- DELETE ACCOUNT ----------
-elif menu == "Delete Account":
-    st.subheader("Delete Account")
 
-    acc_no, pin = authenticate_user()
-    st.warning("⚠️ This action is irreversible!")
+# ---------- HELPERS ----------
+def get_authenticated_user(account_no: str, pin: int):
+    user = bank.authenticate(account_no, pin)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid account number or PIN",
+        )
+    return user
 
-    if st.button("Delete Account"):
-        if not pin.isdigit():
-            st.error("Invalid PIN")
-        else:
-            user = bank.authenticate(acc_no, int(pin))
-            if not user:
-                st.error("Invalid credentials")
-            else:
-                bank.delete_account(user)
-                st.warning("Account deleted successfully ❌")
+
+# ---------- ROUTES ----------
+@app.get("/", tags=["health"])
+def health_check():
+    return {"status": "ok", "service": "Bank Management System API"}
+
+
+@app.post(
+    "/accounts",
+    response_model=AccountDetails,
+    status_code=status.HTTP_201_CREATED,
+    tags=["accounts"],
+)
+def create_account(payload: AccountCreate):
+    success, result = bank.create_account(
+        payload.name, payload.age, payload.email, payload.pin
+    )
+    if not success:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
+    return result
+
+
+@app.post("/accounts/view", response_model=AccountDetails, tags=["accounts"])
+def view_account(payload: AuthRequest):
+    return get_authenticated_user(payload.account_no, payload.pin)
+
+
+@app.post(
+    "/accounts/{account_no}/deposit", response_model=AccountDetails, tags=["transactions"]
+)
+def deposit(account_no: str, payload: AmountRequest):
+    user = get_authenticated_user(account_no, payload.pin)
+    success, msg = bank.deposit(user, payload.amount)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+    return user
+
+
+@app.post(
+    "/accounts/{account_no}/withdraw", response_model=AccountDetails, tags=["transactions"]
+)
+def withdraw(account_no: str, payload: AmountRequest):
+    user = get_authenticated_user(account_no, payload.pin)
+    success, msg = bank.withdraw(user, payload.amount)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+    return user
+
+
+@app.patch(
+    "/accounts/{account_no}", response_model=AccountDetails, tags=["accounts"]
+)
+def update_account(account_no: str, payload: UpdateRequest):
+    user = get_authenticated_user(account_no, payload.pin)
+    success, result = bank.update_details(
+        user,
+        name=payload.name or None,
+        email=payload.email or None,
+        pin=payload.new_pin or None,
+    )
+    if not success:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
+    return result["new"]
+
+
+@app.delete(
+    "/accounts/{account_no}", response_model=MessageResponse, tags=["accounts"]
+)
+def delete_account(account_no: str, payload: PinRequest):
+    user = get_authenticated_user(account_no, payload.pin)
+    bank.delete_account(user)
+    return {"message": "Account deleted successfully"}
